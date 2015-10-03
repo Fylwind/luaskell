@@ -1,6 +1,9 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeOperators #-}
 module Luaskell where
@@ -8,9 +11,12 @@ import Data.ByteString.Lazy.Char8 (ByteString)
 import Data.Char (isPrint, ord)
 import Data.Monoid ((<>))
 import Data.Text.Encoding (encodeUtf8)
+import GHC.TypeLits (Symbol)
 import qualified Data.ByteString.Lazy.Char8 as B
 import qualified Data.Text as T
+import Render
 
+-- | Alias for Lua table.
 type a := b = [(a, b)]
 
 data Literal a where
@@ -18,6 +24,9 @@ data Literal a where
   LBoolean :: Bool -> Literal Bool
   LNumber :: Double -> Literal Double
   LString :: ByteString -> Literal ByteString
+
+  LIf :: Literal ([(Bool, () -> ())], Maybe (() -> ()))
+  LFor :: Literal ()
 
 class IsLiteral a where
   lit :: a -> Expr a
@@ -43,24 +52,63 @@ data Expr a where
   XFunction :: (Expr a -> Expr b) -> Expr (a -> b)
   XApply :: Expr a -> (Expr a -> Expr b) -> Expr b
   XLet :: Expr a -> (Expr a -> Expr b) -> Expr b
+  XConstant :: Expr a -> (Expr a -> Expr b) -> Expr b
   XCoerce :: Expr a -> Expr b
+  XVariable :: ByteString -> Expr b
 
-type Lua a = Expr a
+padStart :: Int -> a -> [a] -> [a]
+padStart n c s = replicate (n - length s) c <> s
 
-compileString :: ByteString -> ByteString
-compileString s = B.concatMap compileChar s
+compile :: Expr a -> ByteString
+compile = render 0 0 . compileExpr
+
+compileExpr :: Expr a -> Render
+compileExpr (XLiteral x) = compileLiteral x
+compileExpr (XCoerce x)  = compileExpr x
+
+compileLiteral :: Literal a -> Render
+compileLiteral LNil = r_token "nil"
+compileLiteral (LBoolean True) = r_token "true"
+compileLiteral (LBoolean False) = r_token "false"
+compileLiteral (LNumber n) = r_token (B.pack (show n))
+compileLiteral (LString s) = compileString s
+compileLiteral _ = error "compileLiteral: internal error (bad literal)"
+
+compileString :: ByteString -> Render
+compileString s = r_token ("\"" <> B.concatMap compileChar s <> "\"")
   where compileChar c
-          | not (isPrint c) = B.pack ("\\" <> padBegin 3 '0' (show (ord c)))
+          | not (isPrint c) = B.pack ("\\" <> padStart 3 '0' (show (ord c)))
           | c == '\\'       = "\\"
           | c == '"'        = "\""
           | otherwise       = B.singleton c
 
-padBegin :: Int -> a -> [a] -> [a]
-padBegin n c s = replicate (n - length s) c <> s
+{-
+constants: floated out automatically
+externals: (free variables); never renamed
 
-compileLiteral :: Literal a -> ByteString
-compileLiteral LNil = "nil"
-compileLiteral (LString s) = compileString s
+mutation? IO monad?
 
-compile :: Lua a -> ByteString
-compile (XLiteral x) = compileLiteral x
+-}
+
+-- -- nil | a
+-- ljust :: MaybeType a => Literal (a -> Maybe a)
+
+-- -- {x, y}
+-- lpair :: Expr (a -> b -> (a, b))
+
+-- -- {i, x}
+-- lleft :: Literal (a -> Either a b)
+-- lright :: Literal (b -> Either a b)
+
+-- data TypeError (s :: Symbol) a
+
+-- type family CheckMaybeType a where
+--   CheckMaybeType () = TypeError "Nil is not allowed:" ()
+--   CheckMaybeType (Maybe a) = TypeError "Maybe cannot be nested:" (Maybe a)
+--   CheckMaybeType a = ()
+
+-- type family CheckNotEqual a b where
+--   CheckNotEqual a a = TypeError "Types must not be equal:" a
+--   CheckNotEqual a b = ()
+
+-- type MaybeType a = CheckMaybeType a ~ ()
