@@ -1,11 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 module LuaSyntax where
 import Data.ByteString.Lazy.Char8 (ByteString)
+import Data.Char (isPrint, ord)
 import Data.Map (Map)
-import Data.Monoid ((<>))
 import Render (Render)
+import qualified Data.ByteString.Lazy.Char8 as B
 import qualified Render as R
 import qualified Data.Map.Strict as Map
+import Common
+import Utils
 
 data Stat
   = Stat ByteString
@@ -147,6 +150,19 @@ renderVar (VarMember e n) =
 
 renderExp :: Exp -> Render
 renderExp (Exp s) = R.atom s
+renderExp Nil = "nil"
+renderExp (Bool True) = "true"
+renderExp (Bool False) = "false"
+renderExp (Number x) = R.atom (stringToBytestring (show x))
+renderExp (String s) = renderString s
+
+renderString :: ByteString -> Render
+renderString s = R.atom ("\"" <> B.concatMap compileChar s <> "\"")
+  where compileChar c
+          | not (isPrint c) = B.pack ("\\" <> padStart 3 '0' (show (ord c)))
+          | c == '\\'       = "\\"
+          | c == '"'        = "\""
+          | otherwise       = B.singleton c
 
 renderStat :: Stat -> Render
 renderStat (Stat s) = R.atom s

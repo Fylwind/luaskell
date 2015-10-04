@@ -8,8 +8,6 @@
 {-# LANGUAGE TypeOperators #-}
 module Luaskell where
 import Data.ByteString.Lazy.Char8 (ByteString)
-import Data.Char (isPrint, ord)
-import Data.Monoid ((<>))
 import Data.Text.Encoding (encodeUtf8)
 import GHC.TypeLits (Symbol)
 import qualified Data.ByteString.Lazy.Char8 as B
@@ -55,7 +53,7 @@ instance IsLiteral ByteString where
   lit = XLiteral . LString
 
 instance IsLiteral String where
-  lit = XUnsafeCoerce . XLiteral . LString . B.fromStrict . encodeUtf8 . T.pack
+  lit = XUnsafeCoerce . XLiteral . LString . stringToByteString
 
 data Expr a where
   XLiteral :: Literal a -> Expr a
@@ -73,9 +71,6 @@ f :: Expr (() -> (a, b))
 f = fun $ \ _ ->
   tuple2 (x :* y)
 
-padStart :: Int -> a -> [a] -> [a]
-padStart n c s = replicate (n - length s) c <> s
-
 compile :: Expr a -> ByteString
 compile = render 0 0 . compileExpr
 
@@ -90,14 +85,6 @@ compileLiteral (LBoolean False) = r_token "false"
 compileLiteral (LNumber n) = r_token (B.pack (show n))
 compileLiteral (LString s) = compileString s
 compileLiteral _ = error "compileLiteral: internal error (bad literal)"
-
-compileString :: ByteString -> Render
-compileString s = r_token ("\"" <> B.concatMap compileChar s <> "\"")
-  where compileChar c
-          | not (isPrint c) = B.pack ("\\" <> padStart 3 '0' (show (ord c)))
-          | c == '\\'       = "\\"
-          | c == '"'        = "\""
-          | otherwise       = B.singleton c
 
 {-
 constants: floated out automatically

@@ -3,9 +3,9 @@
 module Render where
 import Data.ByteString.Lazy.Char8 (ByteString)
 import Data.String (IsString(fromString))
-import Data.Text.Encoding (encodeUtf8)
 import qualified Data.ByteString.Lazy.Char8 as B
-import qualified Data.Text as T
+import Common
+import Utils
 
 -- |
 -- @
@@ -15,7 +15,7 @@ newtype Render = Render ((Int, Int) -> ByteString)
                deriving Monoid
 
 instance IsString Render where
-  fromString = atom . B.fromStrict . encodeUtf8 . T.pack
+  fromString = atom . stringToBytestring
 
 render :: Int -> Int -> Render -> ByteString
 render = curry render_
