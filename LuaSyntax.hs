@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module LuaSyntax where
 import Data.ByteString.Lazy.Char8 (ByteString)
+import Data.Map (Map)
+import Data.Monoid ((<>))
+import Render (Render)
 import qualified Render as R
-newtype Name = Name ByteString
+import qualified Data.Map.Strict as Map
 
 data Stat
   = Stat ByteString
-  | Set [Var] [Name] Exp
+  | Set [Var] Exp
   | Do [Stat]
   | While Exp [Stat]
   | Repeat [Stat] Exp
@@ -29,18 +32,13 @@ data Stat
     -- local f = function() ===>  local function f()
     -- f = function() ===>  local function f()
 
-data Var
-  = VarName Name
-  | VarIndex Exp Exp -- left is subject to the same prefixexp rules
-  | VarMember Exp Name -- left is subject to the same prefixexp rules
-
 data Exp
   = Exp ByteString
   | Nil
   | Bool Bool
   | Number Double
   | String ByteString
-  | Ellipsis
+  | Args
 
   | Function [Name] Varargs [Stat]
   | Var Var
@@ -56,7 +54,7 @@ data Exp
   | Call Exp [Exp]
 
     -- makes a difference for packs
-  | Wrap Exp
+  | Group Exp
 
     -- if it's Just (Variable _) then we use x = y syntax
     -- otherwise [x] = y
@@ -81,9 +79,29 @@ data BinOp
   | Neq
   | And
   | Or
+  deriving (Eq, Ord, Read, Show)
 
-binOpInfo :: [(BinOp, (ByteString, Int)]
+data UnOp
+  = Neg
+  | Not
+  | Len
+  deriving (Eq, Ord, Read, Show)
+
+data Var
+  = VarName Name
+  | VarIndex Exp Exp -- left is subject to the same prefixexp rules
+  | VarMember Exp Name -- left is subject to the same prefixexp rules
+
+newtype Name = Name ByteString
+
+name_str :: Name -> ByteString
+name_str (Name x) = x
+
+data Varargs = Varargs | NoVarargs
+
+binOpInfo :: Map BinOp (ByteString, Int)
 binOpInfo =
+  Map.fromList
   [ (Add, ("+",   6))
   , (Sub, ("-",   6))
   , (Mul, ("*",   7))
@@ -101,17 +119,38 @@ binOpInfo =
   , (Or,  ("or",  2))
   ]
 
-data UnOp
-  = Neg
-  | Not
-  | Len
-
-unOpInfo :: [(UnOp, (ByteString, Int)]
+unOpInfo :: Map UnOp (ByteString, Int)
 unOpInfo =
+  Map.fromList
   [ (Neg, ("-",   8))
   , (Not, ("not", 8))
   , (Len, ("#",   8))
+  ]
 
-data Varargs = Varargs | NoVarargs
+lookupOpName :: Ord op => Map op (ByteString, Int) -> op -> ByteString
+lookupOpName info op =
+  case Map.lookup op info of
+    Nothing     -> error "lookupOpName: missing operator"
+    Just (x, _) -> x
+
+renderName :: Name -> Render
+renderName = R.atom . name_str
+
+renderVar :: Var -> Render
+renderVar (VarName name) = renderName name
+renderVar (VarIndex e1 e2) =
+  -- might be wrong (parens?)
+  renderExp e1 <> "[" <> renderExp e2 <> "]"
+renderVar (VarMember e n) =
+  -- same here?
+  renderExp e <> "." <> renderName n
+
+renderExp :: Exp -> Render
+renderExp (Exp s) = R.atom s
+
+renderStat :: Stat -> Render
+renderStat (Stat s) = R.atom s
+renderStat (Set vars e) =
+  R.intercalate (R.atom ".") (renderVar <$> vars) <> " = " <> renderExp e
 
 -- Note: packs are weird
