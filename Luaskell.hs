@@ -18,6 +18,13 @@ import Render
 
 -- | Alias for Lua table.
 type a := b = [(a, b)]
+type Proc a = () -> a
+type Break = (a, b) -> Proc ()
+type Return a = a -> ()
+
+infixr 0 :*
+type a :* b = (a, b)
+(:*) = (,)
 
 data Literal a where
   LNil :: Literal ()
@@ -25,8 +32,12 @@ data Literal a where
   LNumber :: Double -> Literal Double
   LString :: ByteString -> Literal ByteString
 
-  LIf :: Literal ([(Bool, () -> ())], Maybe (() -> ()))
-  LFor :: Literal ()
+  LDo :: Literal (Proc () -> ())
+  LIf :: Literal ([(Bool, Proc ())] -> Maybe (Proc ()) -> ())
+  LForN :: Literal (Int -> Int -> Int -> (Proc () -> a -> ()) -> ())
+  LFor :: Literal (Proc (Maybe a) -> (Break -> a -> ()) -> ())
+  LWhile :: Literal (Proc Bool -> (Break -> ()) -> ())
+  LRepeat :: Literal (Proc Bool -> (Break -> ()) -> ())
 
 class IsLiteral a where
   lit :: a -> Expr a
@@ -44,17 +55,23 @@ instance IsLiteral ByteString where
   lit = XLiteral . LString
 
 instance IsLiteral String where
-  lit = XCoerce . XLiteral . LString . B.fromStrict . encodeUtf8 . T.pack
+  lit = XUnsafeCoerce . XLiteral . LString . B.fromStrict . encodeUtf8 . T.pack
 
 data Expr a where
   XLiteral :: Literal a -> Expr a
   XTable :: [(Expr a, Expr b)] -> Expr (a := b)
-  XFunction :: (Expr a -> Expr b) -> Expr (a -> b)
-  XApply :: Expr a -> (Expr a -> Expr b) -> Expr b
-  XLet :: Expr a -> (Expr a -> Expr b) -> Expr b
+  XFunction :: (Return -> Expr a -> Expr b) -> Expr (a -> b)
+  XApply :: Expr (a -> b) -> Expr a -> Expr b
+  XLocal :: Expr a -> (Expr a -> Expr b) -> Expr b
+  XPackPair :: Expr (a, b) -> (Expr a -> Expr c) -> Expr (a :* b)
   XConstant :: Expr a -> (Expr a -> Expr b) -> Expr b
-  XCoerce :: Expr a -> Expr b
   XVariable :: ByteString -> Expr b
+
+  XUnsafeCoerce :: Expr a -> Expr b
+
+f :: Expr (() -> (a, b))
+f = fun $ \ _ ->
+  tuple2 (x :* y)
 
 padStart :: Int -> a -> [a] -> [a]
 padStart n c s = replicate (n - length s) c <> s
@@ -64,7 +81,7 @@ compile = render 0 0 . compileExpr
 
 compileExpr :: Expr a -> Render
 compileExpr (XLiteral x) = compileLiteral x
-compileExpr (XCoerce x)  = compileExpr x
+compileExpr (XUnsafeCoerce x)  = compileExpr x
 
 compileLiteral :: Literal a -> Render
 compileLiteral LNil = r_token "nil"
@@ -86,7 +103,7 @@ compileString s = r_token ("\"" <> B.concatMap compileChar s <> "\"")
 constants: floated out automatically
 externals: (free variables); never renamed
 
-mutation? IO monad?
+mutation? IO monad? --> for now just assume all functions are impure
 
 -}
 

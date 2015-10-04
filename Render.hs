@@ -14,5 +14,5 @@ newtype Render = Render (Int -> Int -> ByteString)
 render :: Int -> Int -> Render -> ByteString
 render i d (Render f) = f i d
 
-r_token :: ByteString -> Render
-r_token s = Render $ \ _ _ -> s
+token :: ByteString -> Render
+token s = Render $ \ _ _ -> s
