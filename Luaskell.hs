@@ -8,11 +8,9 @@
 {-# LANGUAGE TypeOperators #-}
 module Luaskell where
 import Data.ByteString.Lazy.Char8 (ByteString)
-import Data.Text.Encoding (encodeUtf8)
 import GHC.TypeLits (Symbol)
 import qualified Data.ByteString.Lazy.Char8 as B
-import qualified Data.Text as T
-import Render
+import qualified Render as R
 
 -- | Alias for Lua table.
 type a := b = [(a, b)]
@@ -31,7 +29,7 @@ data Literal a where
   LString :: ByteString -> Literal ByteString
 
   LDo :: Literal (Proc () -> ())
-  LIf :: Literal ([(Bool, Proc ())] -> Maybe (Proc ()) -> ())
+  LIf :: Literal ([(Bool, Proc ())] -> ())
   LForN :: Literal (Int -> Int -> Int -> (Proc () -> a -> ()) -> ())
   LFor :: Literal (Proc (Maybe a) -> (Break -> a -> ()) -> ())
   LWhile :: Literal (Proc Bool -> (Break -> ()) -> ())

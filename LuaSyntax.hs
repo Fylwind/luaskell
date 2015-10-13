@@ -3,7 +3,7 @@ module LuaSyntax where
 import Data.ByteString.Lazy.Char8 (ByteString)
 import Data.Char (isPrint, ord)
 import Data.Map (Map)
-import Render (Render)
+import Render (Indentation, Precedence, Render)
 import qualified Data.ByteString.Lazy.Char8 as B
 import qualified Render as R
 import qualified Data.Map.Strict as Map
@@ -41,7 +41,7 @@ data Exp
   | Bool Bool
   | Number Double
   | String ByteString
-  | Args
+  | Rest
 
   | Function [Name] Varargs [Stat]
   | Var Var
@@ -100,7 +100,7 @@ newtype Name = Name ByteString
 name_str :: Name -> ByteString
 name_str (Name x) = x
 
-data Varargs = Varargs | NoVarargs
+data Varargs = Varargs (Maybe Name) | NoVarargs
 
 binOpInfo :: Map BinOp (ByteString, Int)
 binOpInfo =
@@ -136,27 +136,35 @@ lookupOpName info op =
     Nothing     -> error "lookupOpName: missing operator"
     Just (x, _) -> x
 
-renderName :: Name -> Render
+renderName :: Name -> Render Precedence
 renderName = R.atom . name_str
 
-renderVar :: Var -> Render
+renderNames :: [Name] -> Render Precedence
+renderNames = R.intercalate ", " (renderName <$> ns)
+
+renderVar :: Var -> Render Precedence
 renderVar (VarName name) = renderName name
 renderVar (VarIndex e1 e2) =
   -- might be wrong (parens?)
-  renderExp e1 <> "[" <> renderExp e2 <> "]"
+  R.prec 10 (renderExp e1) <> "[" <> R.row (renderExp e2) <> "]"
 renderVar (VarMember e n) =
   -- same here?
-  renderExp e <> "." <> renderName n
+  R.prec 10 (renderExp e) <> "." <> renderName n
 
-renderExp :: Exp -> Render
+renderExp :: Exp -> Render Precedence
 renderExp (Exp s) = R.atom s
 renderExp Nil = "nil"
 renderExp (Bool True) = "true"
 renderExp (Bool False) = "false"
 renderExp (Number x) = R.atom (stringToBytestring (show x))
 renderExp (String s) = renderString s
+renderExp Rest = "..."
+renderExp (Function ns NoVarargs ss) =
+  R.line ("function(" <> renderNames ns <> ")") <>
+  renderStats ss <>
+  R.line "end"
 
-renderString :: ByteString -> Render
+renderString :: ByteString -> Render Precedence
 renderString s = R.atom ("\"" <> B.concatMap compileChar s <> "\"")
   where compileChar c
           | not (isPrint c) = B.pack ("\\" <> padStart 3 '0' (show (ord c)))
@@ -164,9 +172,13 @@ renderString s = R.atom ("\"" <> B.concatMap compileChar s <> "\"")
           | c == '"'        = "\""
           | otherwise       = B.singleton c
 
-renderStat :: Stat -> Render
+renderStats :: [Stat] -> Render Indentation
+renderStats ss = R.line . renderStat <$> ss
+
+renderStat :: Stat -> Render Indentation
 renderStat (Stat s) = R.atom s
 renderStat (Set vars e) =
-  R.intercalate (R.atom ".") (renderVar <$> vars) <> " = " <> renderExp e
+  R.row (R.intercalate ", " (renderVar <$> vars)) <>
+  " = " <> R.row (renderExp e)
 
 -- Note: packs are weird
